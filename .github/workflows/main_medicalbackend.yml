@@ -36,7 +36,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: java-app
-          path: target/*-SNAPSHOT.jar
+          path: |
+            target/*.jar
+            !target/*.jar.original
           if-no-files-found: error
 
   deploy:
@@ -55,6 +57,17 @@ jobs:
 
       - name: Verify downloaded artifact
         run: ls -la ./artifact
+
+      - name: Resolve JAR path
+        run: |
+          JAR_PATH=$(find "$GITHUB_WORKSPACE/artifact" -maxdepth 3 -type f -name "*.jar" ! -name "*.jar.original" | head -n 1)
+          if [ -z "$JAR_PATH" ]; then
+            echo "No deployable JAR found in artifact directory"
+            ls -R "$GITHUB_WORKSPACE/artifact"
+            exit 1
+          fi
+          echo "Using JAR: $JAR_PATH"
+          echo "JAR_PATH=$JAR_PATH" >> "$GITHUB_ENV"
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -72,7 +85,7 @@ jobs:
         with:
           app-name: medicalbackend
           slot-name: Production
-          package: ./artifact/*.jar
+          package: ${{ env.JAR_PATH }}
 
       - name: Wait before retry
         if: steps.deploy1.outcome == 'failure'
@@ -85,7 +98,7 @@ jobs:
         with:
           app-name: medicalbackend
           slot-name: Production
-          package: ./artifact/*.jar
+          package: ${{ env.JAR_PATH }}
 
       - name: Fail if both deploy attempts failed
         if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
